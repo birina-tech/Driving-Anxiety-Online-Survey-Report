@@ -13,7 +13,7 @@ Report: index.html
 
 Authors:
 
-- Gongda Yu, ITS Engineer, AECOM
+- Gongda Yu (Lead), ITS Engineer, AECOM
 
 Email: gongdayu@buffalo.edu
 
