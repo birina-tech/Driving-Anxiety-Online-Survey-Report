@@ -1,0 +1,1261 @@
+---
+title: "Driving Anxiety Phase I"
+
+date: "`r Sys.Date()`"
+output: html_document
+author: "Irina Benedyk"
+---
+Co-Authors: Gongda Yu, Ye Wang, Austin Angulo
+
+
+# Young Adults Driving Anxiety
+
+
+This is a report for **Phase** I of the research project developed in **TRAVLab** at CSEE Department of University at Buffalo during 2024-2025 academic year. Project was funded by ISTL, University at Buffalo. 
+
+
+
+
+
+```{r setup, include=FALSE}
+# This chunk will run, but won't be visible in the final report.
+
+# ~~~ 1. Load libraries~~~
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(tidyr)
+library(knitr)   # For the kable() function
+library(scales) # For the percent() function
+library(broom)
+
+# ~~~ 2. Load raw data ~~~
+df <- read_excel("Driving_Anxiety_Dataset.xlsx")
+
+# ~~~ 3. Make ALL column names lowercase (Your new step) ~~~
+colnames(df) <- tolower(colnames(df))
+
+# ~~~ 4. Clean data and create Anxiety_Index ~~~
+df_clean <- df %>%
+  
+  # Step 4a: Replace all -999 placeholders with NA (Not Available)
+  mutate(across(.cols = everything(), ~replace(., . == -999, NA))) %>%
+  
+  # Step 4b: Create the composite "Driving Anxiety Score" (DAS)
+  # This averages the 9 key anxiety columns for each person
+  mutate(
+    Anxiety_Index = rowMeans(select(., 
+                                    x39, x40, x41, x42, x51, 
+                                    x52, x54, x55, x56), 
+                             na.rm = TRUE)
+  ) %>%
+  
+  # Step 4c: Convert numeric codes into meaningful, labeled factors
+  mutate(
+    Sex = factor(x4, 
+                 levels = c(1, 2), 
+                 labels = c("Male", "Female")),
+    Accident_Involvement = factor(x27, 
+                                  levels = c(1, 2), 
+                                  labels = c("Accident: Yes", "Accident: No"))
+  ) %>%
+  
+  # Step 4d: Filter out any rows that have missing data
+  # for the key variables we'll be using.
+  filter(
+    !is.na(Anxiety_Index), 
+    !is.na(Sex), 
+    !is.na(Accident_Involvement)
+  )
+```
+
+## Phase I Overview
+
+- The study received **ethical approval** from the University at Buffalo Institutional Review Board (IRB #2025-031)
+
+- In spring 2025, the research team recruited **young drivers aged 18-25** across New York State via email invitations, online forums, and flyers distributed in urban centers
+
+- To **reduce bias** due to academic recruiting settings, we collaborated with the University at Buffalo’s Clinical and Translational Science Institute (CTSI), which promoted the study to its established participant pool following our inclusion criterion
+
+- **Qualtrics Online platform** was used to collect data
+
+- Final sample after **data clearing** consists of 119 participants
+
+
+## Key Take Aways
+
+- Anxiety scores for *females are substantially higher than for males*, regardless of accident history; specific reasons for that are not clear, warranting future exploration
+
+
+- There is *significant difference in anxiety scores between males who have been in an accident and those who have not* with the first group demonstrating lower anxiety score. 
+
+
+```{r key-take-away, echo=FALSE, message=FALSE, warning=FALSE}
+# A grouped box plot is the best visual for this.
+
+grouped_boxplot <- ggplot(df_clean, aes(x = Sex, y = Anxiety_Index, fill = Accident_Involvement)) +
+  
+  # position_dodge() places the boxes side-by-side
+  geom_boxplot(position = position_dodge(width = 0.8), alpha = 0.8) +
+  
+  labs(
+    title = "Driving Anxiety by Gender and Accident History (N = 119)",
+    subtitle = "Comparing Anxiety Index Across Groups",
+    x = "Gender",
+    y = "Anxiety Index Score (1-7)",
+    fill = "Prior Accident"
+  ) +
+  scale_fill_manual(values = c("Accident: Yes" = "darkred", "Accident: No" = "darkblue")) +
+  theme_minimal(base_size = 14)
+
+# Print the plot
+print(grouped_boxplot)
+
+```
+
+
+
+## Anxiety Index Summary
+
+The `Anxiety_Index` was created as a composite score to quantify each participant's overall driving anxiety by averaging their responses to nine specific survey questions: `x39`, `x40`, `x41`, `x42`, `x51`, `x52`, `x54`, `x55`, and `x56`. 
+
+First four questions assessed a range of anxious feelings and behaviors, asking participants to rate their agreement with statements like "I actively avoid driving on highways" (`x39`), "Driving in unfamiliar areas increases my anxiety" (`x40`), "I experience symptoms such as increased heart rate... when driving" (`x41`), and "While driving, I feel more indecisive than usual in my decisions" (`x42`). 
+
+Other questions, assessing experiences over the past year, used a frequency scale. All these  questions used a 7-point scale where 1 represented the lowest level of anxiety (e.g., "Strongly Disagree" or "Never applies") and 7 represented the highest level (e.g., "Strongly Agree" or "Always applies"). Statemetnts used in these questons are:
+
+(x51) I avoided driving due to anxiety.
+(x52) I was frequently worried about encountering unsafe or dangerous drivers.
+(x53) Driving faster than 40 mph made me nervous.
+(x54) I had a constant fear of causing an accident.
+(x55) I constantly felt anxious about being blamed for a traffic conflict.
+(x56) My anxiety level increased when driving at night compared to during the day.
+
+The resulting `Driving Anxiety Score (DAS)` is therefore a mean score between 1 and 7, where a higher value indicates a greater overall level of driving anxiety.
+
+$$
+\text{DAS} = \frac{x39 + x40 + x41 + x42 + x51 + x52 + x54 + x55 + x56}{9}
+$$
+The bottom 25% of drivers had a DAS of 1.889 or less, while the top 25% had a score of 3.833 or higher, showing a significant split in the sample.
+
+```{r Summary Statistics, echo=FALSE}
+
+# ~~~ 1. Get the summary statistics ~~~
+summary_stats <- summary(df_clean$Anxiety_Index)
+
+# ~~~ 2. Convert the summary object into a clean data frame ~~~
+summary_table <- tibble(
+  Statistic = names(summary_stats),
+  Value = round(summary_stats, 3) # Round to 3 decimal places
+)
+
+# ~~~ 3. Print the data frame as a clean table ~~~
+kable(summary_table, caption = "Descriptive Statistics for Anxiety Index (N = 119)")
+```
+
+
+
+```{r anxiety-distributions, message=FALSE, warning=FALSE, echo=FALSE}
+
+# ~~~~~ 1. Reshape Data ~~~~~
+# We pivot the 9 columns into a "long" format for ggplot2
+df_long <- df_clean %>%
+  pivot_longer(
+    cols = c(x39, x40, x41, x42, x51, x52, x54, x55, x56),
+    names_to = "Question_Variable",
+    values_to = "Score"
+  ) %>%
+  filter(!is.na(Score)) # Make sure to remove NAs
+
+# ~~~~~ 2. Create the Data for the Bars (Counts) ~~~~~
+# Treat Score as a discrete category (factor)
+df_long_counts <- df_long %>%
+  mutate(Score = factor(Score, levels = 1:7)) %>%
+  
+  # Get the count of each score (1-7) for each question
+  count(Question_Variable, Score, .drop = FALSE) # .drop=FALSE keeps empty score levels
+
+# ~~~~~ 3. Create the Data for the Text (Means) ~~~~~
+# Calculate the mean score for each question
+mean_data <- df_long %>%
+  group_by(Question_Variable) %>%
+  summarise(
+    MeanScore = mean(Score),
+    # Get the max count for 'y' positioning (optional but cleaner)
+    # This finds the top of the highest bar in each facet
+    y_position = max(df_long_counts$n[df_long_counts$Question_Variable == first(Question_Variable)]) * 0.9
+  ) %>%
+  # Create the text label
+  mutate(MeanLabel = sprintf("Mean: %.2f", MeanScore))
+
+
+# ~~~~~ 4. Create the Plot ~~~~~
+# Create a 3x3 grid of bar plots
+ggplot(df_long_counts, aes(x = Score, y = n, fill = Question_Variable)) +
+  geom_col() +
+  
+  # 'facet_wrap' creates the 9 separate panels
+  facet_wrap(~ Question_Variable, scales = "free_y", nrow = 3) +
+  
+  # --- ADD THE MEAN TEXT LAYER ---
+  geom_text(
+    data = mean_data,  # Use the separate mean_data frame
+    aes(
+      x = 4, # Position text in the middle (on score 4)
+      y = y_position, # Position text at 90% of the max bar height
+      label = MeanLabel
+    ),
+    inherit.aes = FALSE, # stops inheritance of x, y, fill
+    color = "black",     # Make text readable
+    size = 3.5
+  ) +
+  
+  labs(
+    title = "Distribution of Scores for Anxiety Index Components (N = 119)",
+    subtitle = "Showing the count of responses and mean score for each question",
+    x = "Score (1 = Low, 7 = High)",
+    y = "Number of Participants"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") # Hide the legend
+
+```
+
+
+
+## Observations Regarding Driving Anxiety
+
+*Unfamiliar Areas are a Key Stressor.*
+  
+    The highest-rated anxiety item was "Driving in unfamiliar areas increases my anxiety" (x40), with a mean score of 4.22, indicating this is a common stressor for young drivers.
+
+
+
+*Majority of Respondents don't Report Anxiety as a Factor Impeding Driving.*
+
+    On average, participants disagreed with experiencing driving anxiety. The statement "I avoided driving due to anxiety" (x51) had a low mean score of 2.30.
+
+    
+*Fear of Causing an Accident is Low.*
+
+    Similarly, the statement "I had a constant fear of causing an accident" (x54) had a low mean of 2.36 (where 1="Never applies" and 7="Always applies").
+
+
+
+
+## Data Facts
+
+    The dataset consists of young drivers. The average age is approximately 21 years old, with the entire sample ranging from 18 to 26. Every single participant (100%) reported holding a valid driver's license (being lisensed was an includion criterion).
+    
+    
+```{r age-distribution, message=FALSE, warning=FALSE, echo=FALSE}
+
+# ~~~~~ 1. Create the Histogram ~~~~
+# binwidth = 1 is used for age.
+ggplot(df_clean, aes(x = as.numeric(x2))) +
+  geom_histogram(
+    binwidth = 1,
+    fill = "#0072B2",    # A blue color
+    color = "black",     # Adds a black outline to the bars
+    alpha = 0.8          # Makes the fill slightly transparent
+  ) +
+  labs(
+    title = "Age Distribution of Participants (N = 119)",
+    x = "Age (Years)",
+    y = "Number of Participants (Count)"
+  ) +
+  # Adds text labels on top of each bar showing the count
+  stat_bin(binwidth = 1, geom = "text", aes(label = ..count..), vjust = -0.5) +
+  theme_minimal(base_size = 12) +
+  # Ensures the x-axis has a tick for every year
+  scale_x_continuous(breaks = seq(min(df_clean$x2), max(df_clean$x2), by = 1))
+```
+    
+    
+
+    For sample group, driving is by far the most common way to commute to school or work. Over 73% indicated that "Driving" (variable x9) is their primary mode, followed by public transport (~14%) and micro-mobility (~10%).
+    
+```{r x9-commute-mode, message=FALSE, warning=FALSE, echo=FALSE}
+
+# ~~~~~ 1. Create Summary Table ~~~~
+
+# Define the labels for the commute modes
+mode_labels <- c(
+  `1` = "Micro-Mobility",
+  `2` = "Public Transport",
+  `3` = "Driving",
+  `4` = "Other"
+)
+
+# Create the summary table
+x9_summary <- df_clean %>%
+  filter(!is.na(x9)) %>% # Remove any NA values
+  
+  # Convert numeric x9 to a labeled factor
+  mutate(Commute_Mode = factor(x9, 
+                              levels = c(1, 2, 3, 4), 
+                              labels = mode_labels)) %>%
+  
+  # Count the number of participants for each mode
+  count(Commute_Mode) %>%
+  
+  # Calculate the percentage
+  mutate(Percentage = n / sum(n),
+         Percent_Label = scales::percent(Percentage, accuracy = 0.1))
+
+# ~~~~~ 2. Create the Bar Chart ~~~~~
+ggplot(x9_summary, aes(x = reorder(Commute_Mode, -n), y = n, fill = Commute_Mode)) +
+  geom_col() +
+  
+  # Add text labels (the percentage) on top of the bars
+  geom_text(aes(label = Percent_Label), vjust = -0.5) +
+  
+  labs(
+    title = "Distribution of Usual Commute Mode (x9) (N = 119)",
+    x = "Commute Mode",
+    y = "Number of Participants (Count)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+    
+
+    The study's participants are mostly male. About 69% of the sample identified as male (x4), with 30% identifying as female.
+    
+    
+```{r x4-gender, message = FALSE, warning = FALSE, echo = FALSE}
+
+# ~~~~ 1. Create Summary Table ~~~~
+# df_clean$Sex is already a factor from our setup
+x4_summary <- df_clean %>%
+  filter(!is.na(Sex)) %>% # Not strictly needed if setup filter was used, but safe
+  
+  # Count the number of participants for each gender
+  count(Sex) %>%
+  
+  # Calculate the percentage
+  mutate(Percentage = n / sum(n),
+         Percent_Label = scales::percent(Percentage, accuracy = 0.1))
+
+
+# ~~~~ 2. Create the Bar Chart ~~~~
+ggplot(x4_summary, aes(x = Sex, y = n, fill = Sex)) +
+  geom_col(width = 0.7) +
+  
+  # Add text labels (the percentage) on top of the bars
+  geom_text(aes(label = Percent_Label), vjust = -0.5, size = 4) +
+  
+  labs(
+    title = "Gender Distribution (x4) (N = 119)",
+    x = "Gender",
+    y = "Number of Participants (Count)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none")
+```
+    
+
+    Participants are much more confident in their own driving skills than in others' creating "Confidence Gap". On a 7-point scale, average self-confidence (x30) was 5.35 ("Confident"), while average confidence in other drivers (x31) was only 3.04 ("Somewhat confident" / "Slightly confident").
+    
+    
+```{r x30-x31-confidence, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~~~ 1. Reshape Data ~~~~~
+# Pivot x30 and x31 into a long format for faceting
+confidence_long <- df_clean %>%
+  select(x30, x31) %>%
+  pivot_longer(
+    cols = c(x30, x31),
+    names_to = "Variable",
+    values_to = "Score"
+  ) %>%
+  filter(!is.na(Score)) %>%
+  
+  # ~~~~~ 2. Create Labels ~~~~~~
+  # Create a new column with descriptive labels for the facets
+  mutate(
+    Question = factor(Variable, 
+                      levels = c("x30", "x31"),
+                      labels = c("Self-Confidence (x30)", "Confidence in Others (x31)"))
+  ) %>%
+  
+  # ~~~~~ 3. Prep for Plotting ~~~~
+  # Treat Score as a factor to ensure all 7 levels are plotted
+  mutate(Score = factor(Score, levels = 1:7)) %>%
+  
+  # ~~~~~ 4. Count Occurrences ~~~~~
+  count(Question, Score, .drop = FALSE) # .drop=FALSE keeps empty score levels
+
+# ~~~~~ 5. Create the Faceted Bar Chart ~~~~~
+ggplot(confidence_long, aes(x = Score, y = n, fill = Question)) +
+  geom_col() +
+  
+  # Add text labels for the count on top of each bar
+  geom_text(aes(label = n), vjust = -0.5, size = 3) +
+  
+  # Create two separate plots: one for x30 and one for x31
+  facet_wrap(~ Question, scales = "free_y") +
+  
+  labs(
+    title = "Distribution of Confidence Scores (N = 119)",
+    subtitle = "On a scale of 1 (Not confident) to 7 (Very confident)",
+    x = "Confidence Score",
+    y = "Number of Participants (Count)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") # Facet title makes the legend redundant    
+   
+``` 
+
+
+
+    A large portion of this young sample has been in a car accident. One-third (33.6%) of participants reported "Yes" to being involved in an accident (X27).This question asks about life experience and don't assume that participant was a driver or at fault. Any participation in the accident (for example, as passenger) are included. 
+
+```{r x27-accident, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~~~ 1. Create Summary Table ~~~~~~
+# We use the 'Accident_Involvement' factor column 
+# created from 'x27' in the setup
+x27_summary <- df_clean %>%
+  filter(!is.na(Accident_Involvement)) %>%
+  
+  # Count the number of participants for "Yes" and "No"
+  count(Accident_Involvement) %>%
+  
+  # Calculate the percentage
+  mutate(Percentage = n / sum(n),
+         Percent_Label = scales::percent(Percentage, accuracy = 0.1))
+
+
+# ~~~~~ 2. Create the Bar Chart ~~~~~~
+ggplot(x27_summary, aes(x = Accident_Involvement, y = n, fill = Accident_Involvement)) +
+  geom_col(width = 0.7) +
+  
+  # Add text labels (the percentage) on top of the bars
+  geom_text(aes(label = Percent_Label), vjust = -0.5, size = 4) +
+  
+  labs(
+    title = "Accident Involvement (x27) (N = 119)",
+    subtitle = "Have you ever been involved in a car accident?",
+    x = "Response",
+    y = "Number of Participants (Count)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") # Hide legend (redundant)
+```
+
+
+
+    For those participants who were involved in an accident or close to someone who was, the average reported impact on their driving habits (x29) was 3.22 on a 7-point scale (where 1 = "Not affected" and 7 = "Extremely affected").
+    
+    
+```{r x29-impact, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~~~~ 1. Prepare data for this specific question ~~~~~
+# Filter for only those who answered x29 (i.e., not NA)
+x29_data <- df_clean %>%
+  filter(!is.na(x29))
+  
+# ~~~~~~ 2. Get the specific N for this question ~~~~~
+specific_N <- nrow(x29_data)
+
+# ~~~~~~ 3. Create Summary Table ~~~~~~
+x29_summary <- x29_data %>%
+  # Convert to a factor to ensure all 7 levels are included
+  mutate(Score = factor(x29, levels = 1:7)) %>%
+  count(Score, .drop = FALSE) %>% # .drop=FALSE keeps scores with 0 count
+  mutate(
+    Percentage = n / sum(n),
+    Percent_Label = scales::percent(Percentage, accuracy = 0.1)
+  )
+
+
+# ~~~~~ 4. Create the Bar Chart ~~~~~~
+ggplot(x29_summary, aes(x = Score, y = n)) +
+  geom_col(fill = "#D55E00", alpha = 0.8) + # Using a distinct color
+  
+  # Add count labels
+  geom_text(aes(label = n), vjust = -0.5, size = 3.5) +
+  
+  labs(
+    title = "Impact of Accidents on Driving Habits (x29)",
+    subtitle = paste("Based on", specific_N, "participants who answered (1 = Not affected, 7 = Extremely affected)"),
+    x = "Impact Score",
+    y = "Number of Participants (Count)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") +
+  # Ensures all 7 bars are plotted, even if some have a 0 count
+  scale_x_discrete(drop = FALSE)    
+```    
+
+
+
+    On average, participants lean toward disagreeing with the statement "Driving feels more like a burdensome responsibility than an enjoyable activity" (x99). The mean score was 3.19 (where 1="Strongly Disagree" and 7="Strongly Agree").
+    
+    
+```{r x99-burden, echo = FALSE, message = FALSE, warning = FALSE}
+
+# ~~~~~ 1. Prepare data for this specific question ~~~~
+# Filter for only those who answered x99 (i.e., not NA)
+x99_data <- df_clean %>%
+  filter(!is.na(x99))
+  
+# ~~~~  2. Get the specific N for this question ~~~~~
+specific_N <- nrow(x99_data)
+
+# ~~~~ 3. Create Summary Table ~~~~
+x99_summary <- x99_data %>%
+  # Convert to a factor to ensure all 7 levels are included
+  mutate(Score = factor(x99, levels = 1:7)) %>%
+  count(Score, .drop = FALSE) %>% # .drop=FALSE keeps scores with 0 count
+  mutate(
+    Percentage = n / sum(n),
+    Percent_Label = scales::percent(Percentage, accuracy = 0.1)
+  )
+
+# ~~~~ 4. Create the Bar Chart ~~~~
+ggplot(x99_summary, aes(x = Score, y = n)) +
+  geom_col(fill = "#E69F00", alpha = 0.8) + # An orange color
+  
+  # Add count labels
+  geom_text(aes(label = n), vjust = -0.5, size = 3.5) +
+  
+  labs(
+    title = "'Driving is a burden, not enjoyable' (x99)",
+    subtitle = paste("1 = Strongly Disagree, 7 = Strongly Agree (", specific_N, " responses)", sep=""),
+    x = "Agreement Score",
+    y = "Number of Participants (Count)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none") +
+  # Ensures all 7 bars are plotted
+  scale_x_discrete(drop = FALSE)
+```
+    
+
+  
+
+
+## Characteristics of Drivers with Higher Anxiety
+
+To find out what makes high-anxiety drivers different, we have compared the *Top 25%* most anxious drivers (High Anxiety Group) to the *Bottom 25%* least anxious drivers (Low Anxiety Group). The analysis revealed several strong characteristics:
+
+    On a 7-point scale, the high-anxiety group's average self-confidence (x30) was 4.07 ("Somewhat confident"), while the low-anxiety group's was 6.33 ("Very confident") demostrating *significantly lower self-cofidence of HAG*.
+
+```{r confidence-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~~~
+
+# Get the 25th and 75th percentiles (quartiles)
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+# Create a new dataframe, filtering for only the high/low groups
+confidence_raw_data <- df_clean %>%
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety" # 'TRUE ~' is the R equivalent of 'else'
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  # Ensure the order is the same as the bar chart
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety")))
+
+
+# ~~~~~ 2. Create the Box Plot ~~~~~
+ggplot(confidence_raw_data, aes(x = Anxiety_Group, y = x30, fill = Anxiety_Group)) +
+  
+  # Draw the box plot
+  geom_boxplot(alpha = 0.7) +
+  
+  # (Optional) Add the raw data points with a bit of "jitter" (spread)
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  
+  # ~~~~ 3. Add the Mean Values (from your bar chart) ~~~~
+  
+  # Add a diamond shape for the mean
+  stat_summary(
+    fun = "mean", 
+    geom = "point", 
+    shape = 23, # Diamond shape
+    size = 4, 
+    fill = "white"
+  ) +
+  
+  # Add the text label for the mean (e.g., "6.33")
+  stat_summary(
+    fun.data = \(y) { data.frame(y = 7.1, label = round(mean(y), 2)) },
+    geom = "text",
+    size = 4
+  ) +
+  
+  labs(
+    title = "Self-Confidence Distribution by Anxiety Group (x30)",
+    subtitle = "On a scale of 1 (Not confident) to 7 (Very confident)",
+    x = "Anxiety Group",
+    y = "Self-Confidence Score"
+  ) +
+  
+  # Set the Y-axis to the full 1-7 scale for context
+  scale_y_continuous(limits = c(1, 7.2)) + # (7.2 to make room for label)
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "none") # Hide legend (redundant)
+```
+
+
+    Less Driving Experience: High-anxiety drivers had, on average, 1.76 fewer years of driving experience (X24) than low-anxiety drivers (3.50 years vs. 5.42 years).
+    
+```{r x24-experience-boxplot, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw x24 values for each person.
+
+# Get the 25th and 75th percentiles (quartiles)
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+# Create a new dataframe, filtering for only the high/low groups
+experience_raw_data <- df_clean %>%
+  
+  # Ensure x24 is numeric
+  mutate(x24 = as.numeric(x24)) %>% 
+  
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety")))
+
+
+# ~~~ 2. Create the Box Plot ~~~
+ggplot(experience_raw_data, aes(x = Anxiety_Group, y = x24, fill = Anxiety_Group)) +
+  
+  # Draw the box plot
+  geom_boxplot(alpha = 0.7) +
+  
+  # (Optional) Add the raw data points with a bit of "jitter" (spread)
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  
+  labs(
+    title = "Driving Experience by Anxiety Group (x24)",
+    subtitle = "Comparing the 25% least anxious vs. 25% most anxious drivers",
+    x = "Anxiety Group",
+    y = "Driving Experience (Years)"
+  ) +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "none") # Hide legend (redundant)
+```
+
+    
+
+    Strongly Skewed by Sex: Sex (x4) was a major differentiator. The low-anxiety group was 97% male, while the high-anxiety group was 63% female.
+    
+```{r x4-gender-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw 'Sex' values for each person.
+
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+gender_raw_data <- df_clean %>%
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety"))) %>%
+  
+  # Count the number of Males/Females in each group for the % labels
+  count(Anxiety_Group, Sex) %>%
+  group_by(Anxiety_Group) %>%
+  mutate(Percent_Label = scales::percent(n / sum(n), accuracy = 1))
+
+
+# ~~~ 2. Create the 100% Stacked Bar Chart ~~~
+ggplot(gender_raw_data, aes(x = Anxiety_Group, y = n, fill = Sex)) +
+  
+  # position="fill" creates the 100% stacked effect
+  geom_col(position = "fill", alpha = 0.8) +
+  
+  # Add the percentage labels
+  geom_text(
+    aes(label = Percent_Label),
+    position = position_fill(vjust = 0.5), # Centers labels in the stacked areas
+    size = 4
+  ) +
+  
+  labs(
+    title = "Gender Distribution by Anxiety Group (x4)",
+    subtitle = "Comparing the 25% least anxious vs. 25% most anxious drivers",
+    x = "Anxiety Group",
+    y = "Proportion" # The y-axis is now 0 to 1
+  ) +
+  
+  # Format the y-axis to show percentages
+  scale_y_continuous(labels = scales::percent_format()) +
+  
+  # Manually set colors to be clear
+  scale_fill_manual(values = c("Male" = "#0072B2", "Female" = "#D55E00")) +
+  
+  theme_minimal(base_size = 10)
+```
+
+    
+
+    Less Likely to Have Been in an Accident: Interestingly, the high-anxiety group was less likely to have been in an accident (x27). Only 23% of the high-anxiety group reported being in an accident, compared to 48% of the low-anxiety group.
+    
+```{r x27-accident-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw 'Accident_Involvement' 
+# values for each person.
+
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+accident_raw_data <- df_clean %>%
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety"))) %>%
+  
+  # Count the number of "Yes"/"No" in each group for the % labels
+  count(Anxiety_Group, Accident_Involvement) %>%
+  group_by(Anxiety_Group) %>%
+  mutate(Percent_Label = scales::percent(n / sum(n), accuracy = 1))
+
+
+# ~~~ 2. Create the 100% Stacked Bar Chart ~~~
+ggplot(accident_raw_data, aes(x = Anxiety_Group, y = n, fill = Accident_Involvement)) +
+  
+  # position="fill" creates the 100% stacked effect
+  geom_col(position = "fill", alpha = 0.8) +
+  
+  # Add the percentage labels
+  geom_text(
+    aes(label = Percent_Label),
+    position = position_fill(vjust = 0.5), # Centers labels in the stacked areas
+    size = 4
+  ) +
+  
+  labs(
+    title = "Accident Involvement by Anxiety Group (x27)",
+    subtitle = "Comparing the 25% least anxious vs. 25% most anxious drivers",
+    x = "Anxiety Group",
+    y = "Proportion" # The y-axis is now 0 to 1
+  ) +
+  
+  # Format the y-axis to show percentages
+  scale_y_continuous(labels = scales::percent_format()) +
+  
+  # Manually set colors
+  scale_fill_manual(values = c("Accident: Yes" = "#CC79A7", "Accident: No" = "darkgrey")) +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.title = element_blank()) # Cleaner legend
+```
+
+
+    
+
+    Slightly Older: The high-anxiety group was, on average, slightly older (22.1 years vs. 21.3 years) despite having shorter driving experience indicating of possible external covariate that impacted both factors (being anxtious while driving and later acquisition of DL).
+    
+```{r x2-age-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw x2 values for each person.
+
+# Get the 25th and 75th percentiles (quartiles)
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+# Create a new dataframe, filtering for only the high/low groups
+age_raw_data <- df_clean %>%
+  
+  # Ensure x2 is numeric
+  mutate(x2 = as.numeric(x2)) %>% 
+  
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety")))
+
+
+# ~~~ 2. Create the Box Plot ~~~
+ggplot(age_raw_data, aes(x = Anxiety_Group, y = x2, fill = Anxiety_Group)) +
+  
+  # Draw the box plot
+  geom_boxplot(alpha = 0.7) +
+  
+  # (Optional) Add the raw data points with a bit of "jitter" (spread)
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  
+  labs(
+    title = "Age Distribution by Anxiety Group (x2)",
+    subtitle = "Comparing the 25% least anxious vs. 25% most anxious drivers",
+    x = "Anxiety Group",
+    y = "Age (Years)"
+  ) +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "none") # Hide legend (redundant)
+```
+
+    
+
+    When asked to rate agreement with the statement "Driving feels more like a burdensome responsibility than an enjoyable activity" (x99) on a 7-point scale, the high-anxiety group had an average score of 4.30 ("Somewhat Agree"). The low-anxiety group strongly disagreed, with an average score of 2.09 ("Disagree").
+    
+```{r x99-burden-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~~
+# We must re-define the groups to get the raw x99 values for each person.
+
+# Get the 25th and 75th percentiles (quartiles)
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+# Create a new dataframe, filtering for only the high/low groups
+burden_raw_data <- df_clean %>%
+  
+  # Ensure x99 is numeric
+  mutate(x99 = as.numeric(x99)) %>% 
+  
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety")))
+
+
+# ~~~~ 2. Create the Box Plot ~~~
+ggplot(burden_raw_data, aes(x = Anxiety_Group, y = x99, fill = Anxiety_Group)) +
+  
+  # Draw the box plot
+  geom_boxplot(alpha = 0.7) +
+  
+  # (Optional) Add the raw data points with a bit of "jitter" (spread)
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  
+  labs(
+    title = "'Driving is a Burden' by Anxiety Group (x99)",
+    subtitle = "1 = Strongly Disagree, 7 = Strongly Agree",
+    x = "Anxiety Group",
+    y = "Agreement Score"
+  ) +
+  
+  # Set the Y-axis to the full 1-7 scale for context
+  scale_y_continuous(limits = c(1, 7)) +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "none") # Hide legend (redundant)
+```
+
+    
+
+    There was a difference in motivation to drive. The low-anxiety group strongly agreed with "I drive because I WANT to drive" (x103), with a mean score of 5.64. The high-anxiety group was far more neutral, with a mean of 4.01. Both groups had similar scores for "I drive because I NEED to drive" (x102). This shows that anxious drivers are often driving because they have to, not because they want to.
+    
+```{r x102-x103-motivation-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw scores for each person.
+
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+# Create a new dataframe, filtering for only the high/low groups
+motivation_raw_data <- df_clean %>%
+  
+  # Ensure scores are numeric
+  mutate(x102 = as.numeric(x102),
+         x103 = as.numeric(x103)) %>% 
+  
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety"))) %>%
+  
+  # ~~~~ 2. Pivot Data for Faceting ~~~
+  # Select only the columns we need
+  select(Anxiety_Group, x102, x103) %>%
+  
+  # Pivot from "wide" to "long" format
+  pivot_longer(
+    cols = c(x102, x103),
+    names_to = "Question_Variable",
+    values_to = "Score"
+  ) %>%
+  
+  # Create nice labels for the plot facets
+  mutate(
+    Question_Label = factor(Question_Variable,
+                            levels = c("x102", "x103"),
+                            labels = c("'I NEED to drive' (x102)", "'I WANT to drive' (x103)"))
+  )
+
+# ~~~ 3. Create the Faceted Box Plot ~~~
+ggplot(motivation_raw_data, aes(x = Anxiety_Group, y = Score, fill = Anxiety_Group)) +
+  
+  # Draw the box plot
+  geom_boxplot(alpha = 0.7) +
+  
+  # (Optional) Add the raw data points
+  # geom_jitter(width = 0.1, alpha = 0.2) +
+  
+  # This creates the two side-by-side plots
+  facet_wrap(~ Question_Label) +
+  
+  labs(
+    title = "Driving Motivation by Anxiety Group (x102, x103)",
+    subtitle = "1 = Strongly Disagree, 7 = Strongly Agree",
+    x = "Anxiety Group",
+    y = "Agreement Score"
+  ) +
+  
+  # Set the Y-axis to the full 1-7 scale for context
+  scale_y_continuous(limits = c(1, 7)) +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "none") # Hide legend (redundant)
+
+```
+
+    
+
+    When asked how they decide who drives when with friends or family (x67), the groups' preferences were inverted.
+
+    - High Anxiety: 33% said "I usually let friends or family drive" (Option 1).
+
+    - Low Anxiety: Only 9% chose this, with 39% stating "I prefer to drive myself" (Option 2).
+    
+    
+```{r x67-decision-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw 'x67' values for each person.
+
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+decision_raw_data <- df_clean %>%
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety"))) %>%
+  
+  # ~~~ 2. Convert x67 to Labeled Factor ~~~
+  filter(!is.na(x67)) %>% # Remove any NA values
+  mutate(
+    Decision = factor(x67,
+                      levels = c(1, 2, 3, 4, 5),
+                      labels = c("Let others drive", 
+                                 "Prefer to drive", 
+                                 "Depends", 
+                                 "No travel w/ others", 
+                                 "Don't drive"))
+  ) %>%
+
+  # ~~~ 3. Count for Percentage Labels ~~~
+  count(Anxiety_Group, Decision) %>%
+  group_by(Anxiety_Group) %>%
+  mutate(Percent_Label = scales::percent(n / sum(n), accuracy = 1))
+
+
+# ~~~ 4. Create the 100% Stacked Bar Chart ~~~
+ggplot(decision_raw_data, aes(x = Anxiety_Group, y = n, fill = Decision)) +
+  
+  # position="fill" creates the 100% stacked effect
+  geom_col(position = "fill", alpha = 0.8) +
+  
+  # Add the percentage labels
+  geom_text(
+    aes(label = Percent_Label),
+    # position_fill(vjust = 0.5) is better for stacked text
+    position = position_fill(vjust = 0.5), 
+    size = 3.5 # Slightly smaller to fit
+  ) +
+  
+  labs(
+    title = "Driving Decision when Travelling with Others (x67)",
+    subtitle = "Comparing the 25% least anxious vs. 25% most anxious drivers",
+    x = "Anxiety Group",
+    y = "Proportion" # The y-axis is now 0 to 1
+  ) +
+  
+  # Format the y-axis to show percentages
+  scale_y_continuous(labels = scales::percent_format()) +
+  
+  # Use a color palette that's easier to distinguish
+  scale_fill_brewer(palette = "Set2") +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.title = element_blank()) # Cleaner legend
+```
+    
+    
+
+    The high-anxiety group reported "Rarely" to "Sometimes" (mean score of 3.33) engaging in specific activities to alleviate anxiety before driving, such as listening to music or deep breathing (X60). The low-anxiety group reported "Never" (mean score of 1.18).
+    
+```{r x60-calming-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+
+# Create a new dataframe, filtering for only the high/low groups
+calming_raw_data <- df_clean %>%
+  
+  # Ensure x60 is numeric
+  mutate(x60 = as.numeric(x60)) %>% 
+  
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety")))
+
+
+# ~~~ 2. Create the Box Plot ~~~
+ggplot(calming_raw_data, aes(x = Anxiety_Group, y = x60, fill = Anxiety_Group)) +
+  
+  # Draw the box plot
+  geom_boxplot(alpha = 0.7) +
+  
+  # (Optional) Add the raw data points with a bit of "jitter" (spread)
+  geom_jitter(width = 0.1, alpha = 0.2) +
+  
+  labs(
+    title = "Use of Calming Activities Before Driving (x60)",
+    subtitle = "1 = Never, 7 = Always",
+    x = "Anxiety Group",
+    y = "Frequency of Calming Activities"
+  ) +
+  
+  # Set the Y-axis to the full 1-7 scale for context
+  scale_y_continuous(limits = c(1, 7)) +
+  
+  theme_minimal(base_size = 14) +
+  theme(legend.position = "none") # Hide legend (redundant)
+```
+
+    
+    
+
+    When asked if they think additional training could improve their driving confidence (x66), 67% of the high-anxiety group answered "Yes." In contrast, the low-anxiety group was split, with 54% answering "No," suggesting they feel their confidence is already sufficient.  
+  
+ 
+```{r x66-training-comparison, echo=FALSE, message=FALSE, warning=FALSE}
+
+# ~~~ 1. Re-create the Anxiety Groups from Raw Data ~~~
+# We must re-define the groups to get the raw 'x66' values for each person.
+
+q1_anxiety <- quantile(df_clean$Anxiety_Index, 0.25, na.rm = TRUE)
+q4_anxiety <- quantile(df_clean$Anxiety_Index, 0.75, na.rm = TRUE)
+
+training_raw_data <- df_clean %>%
+  # Define the groups
+  mutate(
+    Anxiety_Group = case_when(
+      Anxiety_Index <= q1_anxiety ~ "Low Anxiety",
+      Anxiety_Index >= q4_anxiety ~ "High Anxiety",
+      TRUE ~ "Medium Anxiety"
+    )
+  ) %>%
+  filter(Anxiety_Group %in% c("Low Anxiety", "High Anxiety")) %>%
+  
+  # Ensure the factor order is correct for the plot
+  mutate(Anxiety_Group = factor(Anxiety_Group, levels = c("Low Anxiety", "High Anxiety"))) %>%
+  
+  # ~~~ 2. Convert x66 to Labeled Factor ~~~
+  filter(!is.na(x66)) %>% # Remove any NA values
+  mutate(
+    Training_Response = factor(x66,
+                               levels = c(1, 2, 3),
+                               labels = c("Yes, would improve", 
+                                          "No, would not", 
+                                          "I don't drive"))
+  ) %>%
+
+  # ~~~ 3. Count for Percentage Labels ~~~
+  count(Anxiety_Group, Training_Response) %>%
+  group_by(Anxiety_Group) %>%
+  mutate(Percent_Label = scales::percent(n / sum(n), accuracy = 1))
+
+
+# ~~~ 4. Create the 100% Stacked Bar Chart ~~~
+ggplot(training_raw_data, aes(x = Anxiety_Group, y = n, fill = Training_Response)) +
+  
+  # position="fill" creates the 100% stacked effect
+  geom_col(position = "fill", alpha = 0.8) +
+  
+  # Add the percentage labels
+  geom_text(
+    aes(label = Percent_Label),
+    position = position_fill(vjust = 0.5), # Centers labels
+    size = 3.5 
+  ) +
+  
+  labs(
+    title = "Belief Training Would Improve Confidence (x66)",
+    subtitle = "Comparing the 25% least anxious vs. 25% most anxious drivers",
+    x = "Anxiety Group",
+    y = "Proportion" 
+  ) +
+  
+  # Format the y-axis to show percentages
+  scale_y_continuous(labels = scales::percent_format()) +
+  
+  # Use a color palette that's easier to distinguish
+  scale_fill_brewer(palette = "Set2") +
+  
+  theme_minimal(base_size = 10) +
+  theme(legend.title = element_blank()) # Cleaner legend
+```
+
+  
+## Gender, Prior Accident Experience, and Driving Anxiety Score
+   
+When analyzing the interplay between gender, prior accidents, and driving anxiety, a clear pattern emerges where gender is the dominant factor. Visually, the anxiety scores for *females are substantially higher than for males*, regardless of accident history. While one might expect prior accident involvement to significantly increase anxiety, the statistical analysis shows this is not an observed effect in this data set. There is *significant difference in anxiety scores between males who have been in an accident and those who have not* with the first group demonstrating lower anxiety score. For females, the difference is not statistically significant, though *the trend suggests females with accident experience have slightly higher anxiety*. The most statistically significant divide, by far, is between genders, with **females reporting significantly higher anxiety scores than males overall**.
+
+
+```{r complex-analysis, echo=FALSE, message=FALSE, warning=FALSE}
+# --- Part 1: Create the Simultaneous Visual ---
+# A grouped box plot is the best visual for this.
+
+grouped_boxplot <- ggplot(df_clean, aes(x = Sex, y = Anxiety_Index, fill = Accident_Involvement)) +
+  
+  # position_dodge() places the boxes side-by-side
+  geom_boxplot(position = position_dodge(width = 0.8), alpha = 0.8) +
+  
+  labs(
+    title = "Driving Anxiety by Gender and Accident History (N = 119)",
+    subtitle = "Comparing Anxiety Index across groups",
+    x = "Gender",
+    y = "Anxiety Index Score (1-7)",
+    fill = "Prior Accident"
+  ) +
+  scale_fill_manual(values = c("Accident: Yes" = "#CC79A7", "Accident: No" = "darkgrey")) +
+  theme_minimal(base_size = 14)
+
+# Print the plot
+print(grouped_boxplot)
+
+
+# --- Part 2: Statistical Analysis ---
+# We run t-tests for the 4 comparisons you requested.
+
+# 1. Female (Accident) vs. Female (No Accident)
+df_female <- df_clean %>% filter(Sex == "Female")
+t1 <- t.test(Anxiety_Index ~ Accident_Involvement, data = df_female)
+
+# 2. Male (Accident) vs. Male (No Accident)
+df_male <- df_clean %>% filter(Sex == "Male")
+t2 <- t.test(Anxiety_Index ~ Accident_Involvement, data = df_male)
+
+# 3. All (Accident) vs. All (No Accident)
+t3 <- t.test(Anxiety_Index ~ Accident_Involvement, data = df_clean)
+
+# 4. All (Female) vs. All (Male)
+t4 <- t.test(Anxiety_Index ~ Sex, data = df_clean)
+
+# --- Create a Clean Summary Table of Results ---
+# t.test(y ~ x) uses factor levels alphabetically.
+#   - Accident: "Accident: No" (1), "Accident: Yes" (2)
+#   - Sex: "Female" (1), "Male" (2)
+# We use broom::tidy() to extract results and rename them for clarity.
+
+stats_summary <- bind_rows(
+  tidy(t1) %>% mutate(Comparison = "Female (Accident: Yes vs. No)"),
+  tidy(t2) %>% mutate(Comparison = "Male (Accident: Yes vs. No)"),
+  tidy(t3) %>% mutate(Comparison = "All (Accident: Yes vs. No)"),
+  tidy(t4) %>% mutate(Comparison = "All (Female vs. Male)")
+) %>%
+  mutate(
+    Group1_Label = case_when(
+      Comparison == "All (Female vs. Male)" ~ "Female",
+      TRUE ~ "Accident: No" # Alphabetical first
+    ),
+    Group1_Mean = estimate1,
+    Group2_Label = case_when(
+      Comparison == "All (Female vs. Male)" ~ "Male",
+      TRUE ~ "Accident: Yes" # Alphabetical second
+    ),
+    Group2_Mean = estimate2,
+    T_Statistic = statistic,
+    P_Value = p.value
+  ) %>%
+  select(Comparison, Group1_Label, Group1_Mean, Group2_Label, Group2_Mean, T_Statistic, P_Value)
+
+# Print the statistical table
+kable(stats_summary, 
+      digits = 3, 
+      caption = "Statistical Comparison of Anxiety Index Scores")
+```
+
+
+
+
+
